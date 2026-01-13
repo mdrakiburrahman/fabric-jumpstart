@@ -22,7 +22,7 @@ jumpstarts:
     feature_flags:
       - enable_lakehouse_unpublish
     test_suite: ""
-    owner_email: "fabricjumpstart.spark-structured-streaming@microsoft.com"
+    owner_email: "fabjumpstart_sss@microsoft.com"
     minutes_to_deploy: 8
     minutes_to_complete_jumpstart: 120
 
@@ -39,7 +39,7 @@ jumpstarts:
     preview_image: "assets/image-example.png"
     source:
       repo_url: "https://github.com/microsoft/fabric-analytics-roadshow-lab.git/"
-      repo_ref: "initial-version-prep"
+      repo_ref: "d92c1ec396f167448f2fa2fe80a8b28e961f127a"
       workspace_path: "workspace/"
     items_in_scope: 
       - Lakehouse
@@ -50,7 +50,7 @@ jumpstarts:
     feature_flags:
       - enable_lakehouse_unpublish
     test_suite: ""
-    owner_email: "fabricjumpstart.analytics-roadshow-lab@microsoft.com"
+    owner_email: "fabjumpstart_arl@microsoft.com"
     minutes_to_deploy: 8
     minutes_to_complete_jumpstart: 120
 
@@ -71,7 +71,7 @@ jumpstarts:
     feature_flags:
       - enable_lakehouse_unpublish
     test_suite: ""
-    owner_email: "fabricjumpstart.sample-test@microsoft.com"
+    owner_email: ""
     minutes_to_deploy: 8
     minutes_to_complete_jumpstart: 120
 
@@ -102,7 +102,7 @@ jumpstarts:
       - Report
       - SemanticModel
     test_suite: ""
-    owner_email: "fabricjumpstart.spark-rti-monitoring@microsoft.com"
+    owner_email: "fabjumpstart_srm@microsoft.com"
     minutes_to_deploy: 8
     minutes_to_complete_jumpstart: 120
 
