@@ -1,4 +1,4 @@
-name: "[Jumpstart] New Jumpstart"
+name: "New Jumpstart"
 description: "Propose a new Fabric Jumpstart package"
 labels:
   - "type: jumpstart"
