@@ -10,9 +10,10 @@ jumpstarts:
     include_in_listing: True
     workload_tags: ["Data Engineering"]
     scenario_tags: ["Streaming"]
-    preview_image: "assets/image-example.png"
+    type: "Tutorial"
     source:
       workspace_path: "src/"
+      preview_image_path: "assets/image-example.png"
     items_in_scope: 
       - Lakehouse
       - Warehouse
@@ -21,8 +22,10 @@ jumpstarts:
       - Environment
     feature_flags:
       - enable_lakehouse_unpublish
+    jumpstart_docs_uri: ""
+    entry_point: "1_ExploreData.Notebook" # can be a Fabric Item OR a URL
     test_suite: ""
-    owner_email: "fabjumpstart_sss@microsoft.com"
+    owner_email: "FabricJumpstart.SparkStructuredStreaming@microsoft.com"
     minutes_to_deploy: 8
     minutes_to_complete_jumpstart: 120
 
@@ -36,11 +39,12 @@ jumpstarts:
     include_in_listing: True
     workload_tags: ["Data Engineering", "Data Warehouse"]
     scenario_tags: ["Streaming", "Modeling"]
-    preview_image: "assets/image-example.png"
+    type: "Tutorial"
     source:
       repo_url: "https://github.com/microsoft/fabric-analytics-roadshow-lab.git/"
-      repo_ref: "d92c1ec396f167448f2fa2fe80a8b28e961f127a"
+      repo_ref: "v0.1.1"
       workspace_path: "workspace/"
+      preview_image_path: "assets/image-example.png"
     items_in_scope: 
       - Lakehouse
       - Warehouse
@@ -49,8 +53,10 @@ jumpstarts:
       - Environment
     feature_flags:
       - enable_lakehouse_unpublish
+    jumpstart_docs_uri: ""
+    entry_point: "1_ExploreData.Notebook" # can be a Fabric Item OR a URL
     test_suite: ""
-    owner_email: "fabjumpstart_arl@microsoft.com"
+    owner_email: "FabricJumpstart.AnalyticsRoadshowLab@microsoft.com"
     minutes_to_deploy: 8
     minutes_to_complete_jumpstart: 120
 
@@ -64,12 +70,15 @@ jumpstarts:
     include_in_listing: False
     workload_tags: ["Test"]
     scenario_tags: ["Test"]
-    preview_image: "assets/image-example.png"
+    type: "Demo"
     source:
       workspace_path: "src/"
+      preview_image_path: "assets/image-example.png"
     items_in_scope:
     feature_flags:
       - enable_lakehouse_unpublish
+    jumpstart_docs_uri: ""
+    entry_point: "1_ExploreData.Notebook" # can be a Fabric Item OR a URL
     test_suite: ""
     owner_email: ""
     minutes_to_deploy: 8
@@ -85,11 +94,12 @@ jumpstarts:
     include_in_listing: True
     workload_tags: ["Data Engineering", "Real Time Intelligence"]
     scenario_tags: ["Monitoring"]
-    preview_image: "assets/image-example.png"
+    type: "Accelerator"
     source:
       repo_url: "https://github.com/microsoft/fabric-toolbox.git"
       repo_ref: "f09cb09d26ab317f50a9d97bb833009834661541"
       workspace_path: "monitoring/fabric-spark-monitoring/src/"
+      preview_image_path: "monitoring/fabric-spark-monitoring/assets/image-example.png" # TO BE UPDATED
     items_in_scope: 
       - Notebook
       - Eventhouse
@@ -101,8 +111,10 @@ jumpstarts:
       - DataPipeline
       - Report
       - SemanticModel
+    jumpstart_docs_uri: ""
+    entry_point: "1_ExploreData.Notebook" # can be a Fabric Item OR a URL
     test_suite: ""
-    owner_email: "fabjumpstart_srm@microsoft.com"
+    owner_email: "FabricJumpstart.SparkRTIMonitoring@microsoft.com"
     minutes_to_deploy: 8
     minutes_to_complete_jumpstart: 120
 
@@ -116,9 +128,10 @@ jumpstarts:
     include_in_listing: True
     workload_tags: ["Data Factory", "SQL Database"]
     scenario_tags: ["Data Integration"]
-    preview_image: "assets/image-example.png"
+    type: "Accelerator"
     source:
       workspace_path: "src/"
+      preview_image_path: "assets/image-example.png"
     items_in_scope: 
       - Notebook
       - Eventhouse
@@ -130,6 +143,8 @@ jumpstarts:
       - DataPipeline
       - Report
       - SemanticModel
+    jumpstart_docs_uri: ""
+    entry_point: "1_ExploreData.Notebook" # can be a Fabric Item OR a URL
     test_suite: ""
     owner_email: ""
     minutes_to_deploy: 8
@@ -145,9 +160,10 @@ jumpstarts:
     include_in_listing: True
     workload_tags: ["Data Engineering"]
     scenario_tags: ["Batch Processing"]
-    preview_image: "assets/image-example.png"
+    type: "Accelerator"
     source:
       workspace_path: "src/"
+      preview_image_path: "assets/image-example.png"
     items_in_scope: 
       - Notebook
       - Eventhouse
@@ -159,6 +175,8 @@ jumpstarts:
       - DataPipeline
       - Report
       - SemanticModel
+    jumpstart_docs_uri: ""
+    entry_point: "1_ExploreData.Notebook" # can be a Fabric Item OR a URL
     test_suite: ""
     owner_email: ""
     minutes_to_deploy: 8
@@ -174,9 +192,10 @@ jumpstarts:
     include_in_listing: True
     workload_tags: ["Power BI"]
     scenario_tags: ["Modeling"]
-    preview_image: "assets/image-example.png"
+    type: "Demo"
     source:
       workspace_path: "src/"
+      preview_image_path: "assets/image-example.png"
     items_in_scope: 
       - Notebook
       - Eventhouse
@@ -188,6 +207,8 @@ jumpstarts:
       - DataPipeline
       - Report
       - SemanticModel
+    jumpstart_docs_uri: ""
+    entry_point: "1_ExploreData.Notebook" # can be a Fabric Item OR a URL
     test_suite: ""
     owner_email: ""
     minutes_to_deploy: 8

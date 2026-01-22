@@ -4,12 +4,16 @@ import base64
 import html
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlparse
 
-from .schemas import DEFAULT_WORKLOAD_COLORS, WORKLOAD_COLOR_MAP
+from .constants import DEFAULT_WORKLOAD_COLORS, WORKLOAD_COLOR_MAP
 
 # Load copy icon SVG once at module level
-_assets_path = Path(__file__).parent / 'ui_assets'
+_current_dir = Path(__file__).parent
+_assets_path = _current_dir / 'ui_assets'
 _copy_icon_path = _assets_path / 'copy-icon.svg'
+_css_path = _current_dir / 'jumpstart.css'
+_js_path = _current_dir / 'jumpstart.js'
 try:
     with open(_copy_icon_path, 'r', encoding='utf-8') as f:
         _COPY_ICON_SVG = f.read()
@@ -19,6 +23,16 @@ try:
 except FileNotFoundError:
     # Fallback to a simple rectangle if file not found
     _COPY_ICON_SVG = '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><rect width="16" height="16" fill="currentColor"/></svg>'
+
+try:
+    _JUMPSTART_CSS = _css_path.read_text(encoding='utf-8')
+except FileNotFoundError:
+    _JUMPSTART_CSS = ''
+
+try:
+    _JUMPSTART_JS = _js_path.read_text(encoding='utf-8')
+except FileNotFoundError:
+    _JUMPSTART_JS = ''
 
 
 # Map workload tags to icon filenames stored in ui_assets
@@ -34,6 +48,14 @@ WORKLOAD_ICON_MAP = {
 }
 
 DEFAULT_WORKLOAD_ICON = WORKLOAD_ICON_MAP.get("Data Engineering")
+
+
+# Map jumpstart types to quick-recognition emojis for the card tag
+TYPE_EMOJI_MAP = {
+    "Accelerator": "🚀",
+    "Demo": "▶️",
+    "Tutorial": "📓",
+}
 
 
 @lru_cache(maxsize=32)
@@ -78,14 +100,74 @@ def _load_preview_image_data(path: Path) -> str:
     return f"data:{mime};base64,{encoded}"
 
 
+def _build_github_raw_url(repo_url: str, ref: str, file_path: str) -> str:
+    """Convert a GitHub repo URL + ref + file path into a raw.githubusercontent URL."""
+    parsed = urlparse(repo_url)
+    if parsed.hostname != "github.com":
+        return ''
+
+    parts = parsed.path.strip('/').split('/')
+    if len(parts) < 2:
+        return ''
+
+    owner, repo = parts[0], parts[1]
+    if repo.endswith('.git'):
+        repo = repo[:-4]
+
+    safe_path = file_path.lstrip('/\\')
+    safe_ref = ref or 'main'
+    return f"https://raw.githubusercontent.com/{owner}/{repo}/{safe_ref}/{safe_path}"
+
+
+def _format_duration_label(minutes) -> str:
+    """Return formatted duration text like "⏱ 120 min"."""
+    if minutes is None or minutes == '':
+        return ''
+    try:
+        minutes_int = int(minutes)
+    except (TypeError, ValueError):
+        safe_text = html.escape(str(minutes), quote=True)
+        return safe_text
+
+    return f"⏱ {minutes_int} min"
+
+
+def _format_deploy_time_label(minutes) -> str:
+    """Return formatted deployment duration text like "📦 Deploy 10 min"."""
+    if minutes is None or minutes == '':
+        return ''
+    try:
+        minutes_int = int(minutes)
+    except (TypeError, ValueError):
+        safe_text = html.escape(str(minutes), quote=True)
+        return safe_text
+
+    return f"📦 {minutes_int} min"
+
+
+def _format_type_label(type_value: str) -> str:
+    """Return type label decorated with an emoji for quick scanning."""
+    if not type_value:
+        return ''
+    emoji = TYPE_EMOJI_MAP.get(str(type_value), '')
+    safe_text = html.escape(str(type_value), quote=True)
+    return f"{emoji} {safe_text}" if emoji else safe_text
+
+
 def _resolve_preview_image(jumpstart) -> str:
     """Resolve preview image to a data URI or external URL."""
-    preview_path = jumpstart.get("preview_image")
+    preview_path = jumpstart['source'].get("preview_image_path")
     if not preview_path:
         return ''
 
     if preview_path.startswith(("http://", "https://", "data:")):
         return preview_path
+
+    source_cfg = jumpstart.get('source', {})
+    repo_url = source_cfg.get('repo_url')
+    if repo_url:
+        raw_url = _build_github_raw_url(repo_url, source_cfg.get('repo_ref', 'main'), preview_path)
+        return raw_url or ''
 
     candidates = []
     try:
@@ -135,7 +217,7 @@ def _build_workload_badges(workload_tags):
     return badges
 
 
-def render_jumpstart_list(grouped_scenario, grouped_workload, instance_name):
+def render_jumpstart_list(grouped_scenario, grouped_workload, grouped_type, instance_name):
     """
     Generate HTML UI for jumpstarts listing with interactive toggle and tag filters.
     
@@ -151,440 +233,24 @@ def render_jumpstart_list(grouped_scenario, grouped_workload, instance_name):
     # Extract unique tags
     scenario_tags = sorted(grouped_scenario.keys())
     workload_tags = sorted(grouped_workload.keys())
+    type_tags = sorted(grouped_type.keys()) if grouped_type else []
     
-    return _generate_html(grouped_scenario, grouped_workload, scenario_tags, workload_tags, instance_name)
+    return _generate_html(
+        grouped_scenario,
+        grouped_workload,
+        grouped_type,
+        scenario_tags,
+        workload_tags,
+        type_tags,
+        instance_name,
+    )
 
 
-def _generate_html(grouped_scenario, grouped_workload, scenario_tags, workload_tags, instance_name):
-    # Arc Jumpstart theming - exact match to jumpstart.azure.com
-    style = """
-    <style>
-        * {
-            box-sizing: border-box;
-        }
-        .jumpstart-container {
-            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Helvetica Neue', sans-serif;
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 40px 20px;
-            background: #fafafa;
-        }
-        .jumpstart-header {
-            margin-bottom: 40px;
-        }
-        .jumpstart-label {
-            color: #117865;
-            font-size: 16px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 2.25px;
-            margin-bottom: 8px;
-        }
-        .jumpstart-header h1 {
-            color: #1f1f1f;
-            font-size: 32px;
-            margin: 0 0 12px 0;
-            font-weight: 700;
-            line-height: 1.2;
-        }
-        .jumpstart-header p {
-            color: #605e5c;
-            font-size: 18px;
-            font-weight: 350;
-            margin: 0;
-            line-height: 1.5;
-        }
-        
-        /* Toggle button group */
-        .view-toggle {
-            display: flex;
-            margin-bottom: 20px;
-        }
-        .toggle-group {
-            display: inline-flex;
-            border: 1px solid #d2d0ce;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-        .toggle-group button {
-            background: transparent;
-            color: #323130;
-            border: none;
-            padding: 10px 32px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            border-right: 1px solid #d2d0ce;
-        }
-        .toggle-group button:last-child {
-            border-right: none;
-        }
-        .toggle-group button.active {
-            background: linear-gradient(135deg, #117865 0%, #0C695A 100%);
-            color: white;
-        }
-        .toggle-group button:hover:not(.active) {
-            background: #ffffff;
-        }
-        
-        /* Tag filter pills */
-        .tag-filters {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-bottom: 40px;
-        }
-        .tag-filter-btn {
-            background: transparent;
-            color: #323130;
-            border: 1px solid #d2d0ce;
-            padding: 6px 18px;
-            border-radius: 4px;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .tag-filter-btn:hover {
-            background: #ffffff;
-            border-color: #8a8886;
-        }
-        .tag-filter-btn.active {
-            background: linear-gradient(135deg, #117865 0%, #0C695A 100%);
-            color: white;
-            border-color: transparent;
-        }
-        
-        .category-section {
-            margin-bottom: 60px;
-        }
-        .category-section.hidden {
-            display: none;
-        }
-        .category-label {
-            color: #117865;
-            font-size: 16px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 2.25px;
-            margin-bottom: 4px;
-        }
-        .category-title {
-            color: #1f1f1f;
-            font-size: 24px;
-            font-weight: 700;
-            margin: 0 0 30px 0;
-            line-height: 1.2;
-        }
-        .jumpstart-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-        }
-        .jumpstart-card {
-            background: #ffffff;
-            border: 1px solid #edebe9;
-            border-radius: 4px;
-            overflow: hidden;
-            transition: all 0.3s ease;
-            box-shadow: 0 1.6px 3.6px 0 rgba(0,0,0,.132), 0 0.3px 0.9px 0 rgba(0,0,0,.108);
-            display: flex;
-            flex-direction: column;
-            position: relative;
-            --accent-primary: #117865;
-            --accent-secondary: #0C695A;
-        }
-        .jumpstart-card:hover {
-            box-shadow: 0 6.4px 14.4px 0 rgba(0,0,0,.132), 0 1.2px 3.6px 0 rgba(0,0,0,.108);
-            transform: translateY(-2px);
-        }
-        .jumpstart-image {
-            width: 100%;
-            height: 160px;
-            position: relative;
-            background: linear-gradient(135deg, var(--accent-primary, #117865) 0%, var(--accent-secondary, #0C695A) 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: visible;
-        }
-        .jumpstart-image::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(180deg, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.35) 100%);
-            z-index: 0;
-            pointer-events: none;
-        }
-        .jumpstart-image .preview-img {
-            position: absolute;
-            bottom: 0;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 88%;
-            height: 86%;
-            object-fit: cover;
-            object-position: top center;
-            border-radius: 3px;
-            box-shadow: 0 8px 18px rgba(0,0,0,0.18);
-            z-index: 1;
-        }
-        .jumpstart-new-badge {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            background: #212121; <!-- var(--accent-primary, #117865) -->
-            color: white;
-            padding: 4px 12px;
-            border-radius: 2px;
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            z-index: 2;
-        }
-        .workload-ribbon {
-            position: absolute;
-            left: 12px;
-            right: 12px;
-            bottom: 0;
-            transform: translateY(33%);
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            padding: 6px 8px;
-            background: rgba(255, 255, 255, 0.8);
-            border-radius: 10px;
-            align-items: center;
-            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
-            backdrop-filter: blur(6px);
-            border: 1px solid rgba(0, 0, 0, 0.04);
-            z-index: 2;
-        }
-        .workload-chip {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 5px 6px;
-            border-radius: 9px;
-            background: rgba(255, 255, 255, 0.9);
-            border: 1px solid rgba(0, 0, 0, 0.05);
-            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
-            cursor: default;
-            pointer-events: auto;
-        }
-        .workload-chip .workload-icon svg,
-        .workload-chip .workload-icon img {
-            width: 20px;
-            height: 20px;
-            display: block;
-        }
-        .jumpstart-content {
-            padding: 36px 24px 24px 24px;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-        }
-        .jumpstart-name {
-            color: #1f1f1f;
-            font-size: 1.5em;
-            font-weight: 600;
-            margin-bottom: 12px;
-            line-height: 1.3;
-        }
-        .jumpstart-description {
-            color: #605e5c;
-            font-size: 14px;
-            line-height: 1.6;
-            margin-bottom: 20px;
-            flex: 1;
-            display: -webkit-box;
-            -webkit-line-clamp: 3;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .jumpstart-install {
-            font-family: 'Consolas', 'Courier New', monospace;
-            font-size: 13px;
-            padding: 12px 16px;
-            background: #f3f2f1;
-            border-radius: 2px;
-            border-left: 3px solid var(--accent-secondary, #0C695A);
-            cursor: pointer;
-            transition: background 0.2s;
-            position: relative;
-        }
-        .jumpstart-install:hover {
-            background: #edebe9;
-        }
-        .jumpstart-install:hover .copy-btn {
-            opacity: 1;
-        }
-        .jumpstart-install code {
-            color: var(--accent-secondary, #0C695A);
-            background: transparent;
-            font-family: inherit;
-        }
-        .copy-btn {
-            position: absolute;
-            right: 8px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: transparent;
-            border: none;
-            padding: 4px;
-            cursor: pointer;
-            opacity: 0.5;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10;
-        }
-        .copy-btn:hover {
-            background: rgba(0, 0, 0, 0.05);
-            border-radius: 2px;
-            opacity: 1;
-        }
-        .copy-btn svg {
-            width: 18px;
-            height: 18px;
-            fill: #424242;
-            pointer-events: none;
-        }
-        .copy-btn.copied svg {
-            fill: var(--accent-secondary, #0C695A);
-        }
-        .view-container {
-            display: none;
-        }
-        .view-container.active {
-            display: block;
-        }
-    </style>
-    """
-    
-    # JavaScript for toggle and tag filter functionality
-    script = """
-    <script>
-        function toggleView(viewType, clickedButton) {
-            // Show selected view
-            document.querySelectorAll('.view-container').forEach(el => {
-                el.classList.remove('active');
-            });
-            document.getElementById(viewType + '-view').classList.add('active');
-            
-            // Update toggle button states
-            document.querySelectorAll('.toggle-group button').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            clickedButton.classList.add('active');
-            
-            // Show corresponding tag filters
-            document.querySelectorAll('.tag-filter-row').forEach(row => {
-                row.style.display = 'none';
-            });
-            document.getElementById(viewType + '-tags').style.display = 'flex';
-            
-            // Reset tag filters - show all
-            filterByTag(null, viewType);
-        }
-        
-        function filterByTag(tag, viewType, clickedButton) {
-            const view = document.getElementById(viewType + '-view');
-            const sections = view.querySelectorAll('.category-section');
-            const tagButtons = document.querySelectorAll('#' + viewType + '-tags .tag-filter-btn');
-            
-            // Toggle behavior: clicking same tag deselects it
-            if (clickedButton && clickedButton.classList.contains('active')) {
-                // Deselect - show all
-                tagButtons.forEach(btn => btn.classList.remove('active'));
-                sections.forEach(section => section.classList.remove('hidden'));
-                return;
-            }
-            
-            // Update tag button states
-            tagButtons.forEach(btn => {
-                btn.classList.remove('active');
-            });
-            if (clickedButton) {
-                clickedButton.classList.add('active');
-            }
-            
-            // Show/hide sections based on filter
-            sections.forEach(section => {
-                if (tag === null) {
-                    section.classList.remove('hidden');
-                } else {
-                    const sectionTag = section.querySelector('.category-title').textContent;
-                    section.classList.toggle('hidden', sectionTag !== tag);
-                }
-            });
-        }
-        
-        function copyToClipboard(button) {
-            // Get the code from the data attribute
-            const text = button.getAttribute('data-code');
-            
-            // Store the original button content before modifying
-            if (!button.dataset.originalContent) {
-                button.dataset.originalContent = button.innerHTML;
-            }
-            
-            // Use execCommand-based fallback only (Clipboard API is blocked in Fabric)
-            const copyText = () => {
-                return new Promise((resolve, reject) => {
-                    try {
-                        const textarea = document.createElement('textarea');
-                        textarea.value = text;
-                        textarea.style.position = 'fixed';
-                        textarea.style.opacity = '0';
-                        document.body.appendChild(textarea);
-                        textarea.select();
-                        const ok = document.execCommand('copy');
-                        document.body.removeChild(textarea);
-                        if (ok) {
-                            resolve();
-                        } else {
-                            reject(new Error('execCommand returned false'));
-                        }
-                    } catch (err) {
-                        reject(err);
-                    }
-                });
-            };
-            
-            copyText().then(() => {
-                // Visual feedback - change to checkmark icon
-                button.classList.add('copied');
-                button.innerHTML = '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M14.431 3.323l-8.47 10-.79-.036-3.35-4.77.818-.574 2.978 4.24 8.051-9.506.764.646z"/></svg>';
-                
-                setTimeout(() => {
-                    button.classList.remove('copied');
-                    button.innerHTML = button.dataset.originalContent;
-                }, 2000);
-            }).catch(err => {
-                console.error('Failed to copy:', err);
-                alert('Failed to copy to clipboard. Please copy manually: ' + text);
-            });
-        }
-        
-        // Event delegation for copy buttons (Fabric notebooks may not support inline onclick for these)
-        document.addEventListener('click', function(e) {
-            const target = e.target;
-            // Check if clicked element or any parent is a copy button
-            const copyBtn = target.classList.contains('copy-btn') ? target : target.closest('.copy-btn');
-            if (copyBtn) {
-                e.preventDefault();
-                e.stopPropagation();
-                copyToClipboard(copyBtn);
-            }
-        }, true); // Use capture phase for better reliability
-    </script>
-    """
-    
+def _generate_html(grouped_scenario, grouped_workload, grouped_type, scenario_tags, workload_tags, type_tags, instance_name):
+    # Arc Jumpstart theming - load from external assets
+    style = f"<style>{_JUMPSTART_CSS}</style>" if _JUMPSTART_CSS else ""
+    script = f"<script>{_JUMPSTART_JS}</script>" if _JUMPSTART_JS else ""
+
     # Build HTML
     html_parts = [style, script, '<div class="jumpstart-container">']
     
@@ -597,27 +263,28 @@ def _generate_html(grouped_scenario, grouped_workload, scenario_tags, workload_t
         </div>
     ''')
     
-    # Toggle button group
+    # Toggle button group with label
     html_parts.append('''
-        <div class="view-toggle">
+        <div class="filters-row">
+            <span class="group-by-label">Group By</span>
             <div class="toggle-group">
-                <button class="active" onclick="toggleView('workload', this)">Workload</button>
-                <button onclick="toggleView('scenario', this)">Scenario</button>
+                <button class="active" data-view="workload" onclick="toggleView('workload', this)">Workload</button>
+                <button data-view="scenario" onclick="toggleView('scenario', this)">Scenario</button>
+                <button data-view="type" onclick="toggleView('type', this)">Type</button>
             </div>
         </div>
     ''')
     
-    # Tag filter buttons - Scenario tags
-    html_parts.append('<div id="scenario-tags" class="tag-filters tag-filter-row" style="display: none;">')
-    for tag in scenario_tags:
-        html_parts.append(f'<button class="tag-filter-btn" onclick="filterByTag(\'{tag}\', \'scenario\', this)">{tag}</button>')
-    html_parts.append('</div>')
-    
-    # Tag filter buttons - Workload tags
-    html_parts.append('<div id="workload-tags" class="tag-filters tag-filter-row">')
-    for tag in workload_tags:
-        html_parts.append(f'<button class="tag-filter-btn" onclick="filterByTag(\'{tag}\', \'workload\', this)">{tag}</button>')
-    html_parts.append('</div>')
+    # Dropdown filter bar with "+ Add Filter" button
+    html_parts.append('''
+        <div class="filters-bar-row">
+            <div id="active-filters" class="filters-active"></div>
+            <div class="add-filter-wrapper">
+                <button id="add-filter-btn" class="add-filter-btn" type="button" aria-expanded="false" aria-haspopup="true" onclick="toggleFilterMenu()">+ Add Filter</button>
+                <div id="filter-menu" class="filter-menu" data-open="false"></div>
+            </div>
+        </div>
+    ''')
     
     # Scenario view
     html_parts.append('<div id="scenario-view" class="view-container">')
@@ -627,6 +294,11 @@ def _generate_html(grouped_scenario, grouped_workload, scenario_tags, workload_t
     # Workload view
     html_parts.append('<div id="workload-view" class="view-container active">')
     html_parts.append(_render_grouped_jumpstarts(grouped_workload, instance_name, group_by="workload"))
+    html_parts.append('</div>')
+
+    # Type view
+    html_parts.append('<div id="type-view" class="view-container">')
+    html_parts.append(_render_grouped_jumpstarts(grouped_type or {}, instance_name, group_by="type"))
     html_parts.append('</div>')
     
     html_parts.append('</div>')
@@ -639,6 +311,9 @@ def _render_grouped_jumpstarts(grouped_jumpstarts, instance_name, group_by="scen
     html_parts = []
     
     for category, jumpstarts_list in sorted(grouped_jumpstarts.items()):
+        category_text = html.escape(str(category))
+        category_attr = html.escape(str(category), quote=True)
+
         section_primary, section_secondary = _resolve_workload_colors(
             jumpstarts_list[0] if jumpstarts_list else {},
             category_tag=category,
@@ -647,9 +322,9 @@ def _render_grouped_jumpstarts(grouped_jumpstarts, instance_name, group_by="scen
         # In workload view tint the EXPLORE label with the darker secondary accent.
         section_color_attr = f' style="color: {section_secondary};"' if group_by == "workload" else ''
         html_parts.append(f'''
-            <div class="category-section">
+            <div class="category-section" data-category="{category_attr}">
                 <div class="category-label"{section_color_attr}>EXPLORE</div>
-            <h2 class="category-title">{category}</h2>
+                <h2 class="category-title">{f"{category_text}s" if group_by == "type" else category_text}</h2>
                 <div class="jumpstart-grid">
         ''')
         
@@ -661,13 +336,64 @@ def _render_grouped_jumpstarts(grouped_jumpstarts, instance_name, group_by="scen
             accent_style = f' style="--accent-primary: {accent_primary}; --accent-secondary: {accent_secondary};"'
 
             preview_src = _resolve_preview_image(j)
-            preview_img_html = f'<img class="preview-img" src="{preview_src}" alt="{j["name"]} preview"/>' if preview_src else ''
+            card_name = html.escape(j.get('name', ''), quote=True)
+            preview_img_html = f'<img class="preview-img" src="{preview_src}" alt="{card_name} preview"/>' if preview_src else ''
+
+            computed_type = (
+                j.get('jumpstart_type')
+                or j.get('type')
+                or (category if group_by == "type" else '')
+            )
+            type_value = html.escape(str(computed_type or ''), quote=True)
+            type_label = _format_type_label(computed_type)
+            type_display = type_label or 'Unspecified'
+            aria_label = html.escape(f"Type: {computed_type or 'Unspecified'}", quote=True)
+            type_callout = (
+                f'<div class="type-pill" aria-label="{aria_label}">{type_display}</div>'
+                if type_display
+                else ''
+            )
+
+            minutes_raw = j.get('minutes_to_complete_jumpstart')
+            duration_label = _format_duration_label(minutes_raw)
+            duration_aria = html.escape(
+                f"Duration: {minutes_raw if minutes_raw not in (None, '') else 'Unspecified'} minutes",
+                quote=True,
+            )
+            duration_callout = (
+                f'<div class="duration-pill" aria-label="{duration_aria}" title="Time to complete">{duration_label}</div>'
+                if duration_label
+                else ''
+            )
+
+            deploy_minutes_raw = j.get('minutes_to_deploy')
+            deploy_label = _format_deploy_time_label(deploy_minutes_raw)
+            deploy_aria = html.escape(
+                f"Deployment time: {deploy_minutes_raw if deploy_minutes_raw not in (None, '') else 'Unspecified'} minutes",
+                quote=True,
+            )
+            deploy_callout = (
+                f'<div class="deploy-pill" aria-label="{deploy_aria}" title="Time to deploy">{deploy_label}</div>'
+                if deploy_label
+                else ''
+            )
+
+            meta_pills = ''.join([pill for pill in [type_callout, deploy_callout, duration_callout] if pill])
+            meta_block = (
+                f'<div class="meta-pills" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;">{meta_pills}</div>'
+                if meta_pills
+                else ''
+            )
 
             workload_badges = _build_workload_badges(j.get("workload_tags"))
             workload_badges_html = ''.join(
                 f'<div class="workload-chip" title="{tag}" aria-label="{tag}"><span class="workload-icon"><img src="{data_uri}" alt="{tag} icon"/></span></div>'
                 for tag, data_uri in workload_badges
             )
+
+            workloads_value = html.escape('|'.join(j.get("workload_tags") or []), quote=True)
+            scenarios_value = html.escape('|'.join(j.get("scenario_tags") or []), quote=True)
+            type_value = html.escape(str(computed_type or ''), quote=True)
 
             description_text = j.get('description', '')
             description_title = html.escape(description_text, quote=True)
@@ -682,10 +408,11 @@ def _render_grouped_jumpstarts(grouped_jumpstarts, instance_name, group_by="scen
             install_code_plain = f"{instance_name}.install('{j['id']}')"
             
             html_parts.append(f'''
-                <div class="jumpstart-card"{accent_style}>
+                <div class="jumpstart-card"{accent_style} data-type="{type_value}" data-workloads="{workloads_value}" data-scenarios="{scenarios_value}">
                     <div class="jumpstart-image">{preview_img_html}{new_badge}<div class="workload-ribbon">{workload_badges_html}</div></div>
                     <div class="jumpstart-content">
-                        <div class="jumpstart-name">{j['name']}</div>
+                        {meta_block}
+                        <div class="jumpstart-name">{card_name}</div>
                         <div class="jumpstart-description" title="{description_title}">{description_text}</div>
                         <div class="jumpstart-install">
                             <code>{install_code}</code>
