@@ -1,5 +1,4 @@
 import contextlib
-import io
 import logging
 import re
 import traceback
@@ -187,48 +186,51 @@ class jumpstart:
         # Choose the frame that holds user scope:
         # - If invoked via list(), go two frames up (user -> list -> _get_instance_name)
         # - If invoked directly, go one frame up (user -> _get_instance_name)
-        caller = inspect.currentframe().f_back
+        current = inspect.currentframe()
+        caller = current.f_back if current else None
         frame = caller.f_back if caller and caller.f_code.co_name == "list" else caller
 
         # Collect direct references to the instance and module aliases that expose it
         instance_names = set()
         module_aliases = set()
-        for scope in [frame.f_locals, frame.f_globals]:
-            for var_name, var_value in scope.items():
-                if var_value is self and not var_name.startswith('_'):
-                    instance_names.add(var_name)
-                # Handle "import fabric_jumpstart as js" where js.jumpstart is the instance
-                try:
-                    if inspect.ismodule(var_value) and getattr(var_value, "jumpstart", None) is self:
-                        module_aliases.add(var_name)
-                except Exception:
-                    # Best-effort alias detection; ignore inspection issues
-                    pass
+        if frame:
+            for scope in [frame.f_locals, frame.f_globals]:
+                for var_name, var_value in scope.items():
+                    if var_value is self and not var_name.startswith('_'):
+                        instance_names.add(var_name)
+                    # Handle "import fabric_jumpstart as js" where js.jumpstart is the instance
+                    try:
+                        if inspect.ismodule(var_value) and getattr(var_value, "jumpstart", None) is self:
+                            module_aliases.add(var_name)
+                    except Exception:
+                        # Best-effort alias detection; ignore inspection issues
+                        pass
 
         logger.debug(f"Found instance names: {instance_names}; module aliases: {module_aliases}")
 
         # Parse the calling line to see which name was used
         try:
             import linecache
-            call_line = frame.f_lineno
-            filename = frame.f_code.co_filename
-            line = linecache.getline(filename, call_line).strip()
+            if frame and frame.f_code:
+                call_line = frame.f_lineno
+                filename = frame.f_code.co_filename
+                line = linecache.getline(filename, call_line).strip()
 
-            logger.debug(f"Parsing line: {line}")
+                logger.debug(f"Parsing line: {line}")
 
-            patterns = [
-                r'(\w+)\.list\s*\(',
-                r'(\w+)\._get_instance_name\s*\(',
-            ]
+                patterns = [
+                    r'(\w+)\.list\s*\(',
+                    r'(\w+)\._get_instance_name\s*\(',
+                ]
 
-            for pattern in patterns:
-                match = re.search(pattern, line)
-                if match:
-                    calling_var = match.group(1)
-                    logger.debug(f"Found calling variable: {calling_var}")
-                    if calling_var in instance_names or calling_var in module_aliases:
-                        logger.debug(f"Using matched variable name: {calling_var}")
-                        return calling_var
+                for pattern in patterns:
+                    match = re.search(pattern, line)
+                    if match:
+                        calling_var = match.group(1)
+                        logger.debug(f"Found calling variable: {calling_var}")
+                        if calling_var in instance_names or calling_var in module_aliases:
+                            logger.debug(f"Using matched variable name: {calling_var}")
+                            return calling_var
 
         except Exception as e:
             logger.debug(f"Error parsing calling line: {e}")
@@ -288,7 +290,7 @@ class jumpstart:
             prefixed_entry_point = f"{item_prefix}{entry_point}"
 
         if workspace_id is None and _is_fabric_runtime():
-            notebookutils = get_ipython().user_ns.get("notebookutils")  # noqa: F821
+            import notebookutils  # ty: ignore[unresolved-import]
             workspace_id = notebookutils.runtime.context['currentWorkspaceId']
 
         config = self._get_jumpstart_by_logical_id(name)
@@ -371,7 +373,7 @@ class jumpstart:
         utils_root_logger = logging.getLogger('fabric_jumpstart')
         utils_logger = logging.getLogger('fabric_jumpstart.utils')
 
-        # Always capture fabric + jumpstart logs; debug flag can be used for future verbosity gates.
+        # Always capture fabric + jumpstart logs; debug flag toggles verbosity.
         targets = [fabric_logger, module_logger, utils_root_logger, utils_logger]
 
         original_states = []
@@ -379,7 +381,7 @@ class jumpstart:
             original_states.append((tgt, list(tgt.handlers), tgt.propagate, tgt.level))
             tgt.handlers = [handler]
             tgt.propagate = False
-            tgt.setLevel(logging.INFO)
+            tgt.setLevel(logging.DEBUG if debug_logs else logging.INFO)
 
         logger.info(f"Workspace path {temp_workspace_path}")
         entry_point = config.get('entry_point')
